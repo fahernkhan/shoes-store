@@ -1,0 +1,108 @@
+name: E-commerce CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  DOCKER_IMAGE: fahernkhan/ecommerce-app
+  DOCKER_TAG: ${{ github.sha }}
+  AWS_EC2_HOST: ${{ secrets.AWS_EC2_HOST }}
+  SSH_USER: ubuntu
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        node-version: [20.x]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Run unit tests
+      run: |
+        npm run test:unit
+        npm run test:integration
+      
+    - name: Build application
+      run: npm run build
+      
+    - name: Run security scan
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        severity: 'HIGH,CRITICAL'
+        
+    - name: Run dependency check
+      uses: snyk/actions/node@master
+      with:
+        command: monitor
+        args: --all-projects
+        
+  docker-build-push:
+    needs: build-test
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+        
+    - name: Build and push
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: |
+          ${{ env.DOCKER_IMAGE }}:${{ env.DOCKER_TAG }}
+          ${{ env.DOCKER_IMAGE }}:latest
+        secrets: |
+          "DATABASE_URL=${{ secrets.PROD_DATABASE_URL }}"
+          
+  deploy-prod:
+    needs: docker-build-push
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+    - name: Deploy to EC2
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ env.AWS_EC2_HOST }}
+        username: ${{ env.SSH_USER }}
+        key: ${{ secrets.AWS_SSH_PRIVATE_KEY }}
+        script: |
+          #!/bin/bash
+          docker-compose down
+          docker system prune -af
+          docker pull ${{ env.DOCKER_IMAGE }}:${{ env.DOCKER_TAG }}
+          docker tag ${{ env.DOCKER_IMAGE }}:${{ env.DOCKER_TAG }} ecommerce-app:latest
+          docker-compose up -d
+          docker exec ecommerce-app npx prisma migrate deploy
+          docker exec ecommerce-app npm run seed:prod
+          docker image prune -af
