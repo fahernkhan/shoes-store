@@ -1,4 +1,3 @@
-// next.config.js
 const nextConfig = {
   images: {
     remotePatterns: [
@@ -7,6 +6,10 @@ const nextConfig = {
       { protocol: 'https', hostname: 'platform-lookaside.fbsbx.com' },
     ],
   },
+  webpack: (config) => {
+    config.externals = [...config.externals, 'ws']
+    return config
+  }
 }
 
 module.exports = nextConfig

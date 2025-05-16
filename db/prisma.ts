@@ -1,22 +1,32 @@
-// Import needed packages
-import { Pool, neonConfig } from '@neondatabase/serverless';
+// Import packages
+import { neonConfig } from '@neondatabase/serverless';
 import { PrismaNeon } from '@prisma/adapter-neon';
 import { PrismaClient } from '@prisma/client';
 import ws from 'ws';
 
-// Setup
+// Setup Neon WebSocket
 neonConfig.webSocketConstructor = ws;
-const connectionString = `${process.env.DATABASE_URL}`;
 
-// Init prisma client
-const pool = new Pool({ connectionString });
-const adapter = new PrismaNeon(pool);
+// Connection string dari environment
+const connectionString = process.env.DATABASE_URL!;
+
+// Ini yang benar:
+const adapter = new PrismaNeon({ connectionString });
+
+// Prisma Client dengan adapter Neon
 export const prisma = new PrismaClient({ adapter }).$extends({
-    result: {
-        product: {
-            price: { compute(product) { return product.price.toString() } },
-            rating: { compute(product) { return product.rating.toString() } }
-    } }
+  result: {
+    product: {
+      price: {
+        compute(product) {
+          return product.price.toString();
+        },
+      },
+      rating: {
+        compute(product) {
+          return product.rating.toString();
+        },
+      },
+    },
+  },
 });
-
-// Use Prisma Client as normal
