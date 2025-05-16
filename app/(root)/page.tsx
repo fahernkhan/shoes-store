@@ -7,12 +7,18 @@ export const metadata: Metadata = {
 };
 
 const HomePage = async () => {
-    const latestProducts = await getLatestProducts();
-    return (
-        <>
-            <ProductList data={latestProducts} title='Latest Arrivals' />
-        </>
-    );
-}
+    try {
+        const latestProducts = await getLatestProducts();
+        return (
+            <>
+                <ProductList data={latestProducts} title='Latest Arrivals' />
+            </>
+        );
+    } catch (err) {
+        console.error("🔥 Error in HomePage:", err);
+        throw err;
+    }
+};
+
 
 export default HomePage;
